@@ -121,6 +121,8 @@
 
 					<nvdApiKeyEnvironmentVariable>NVD_API_KEY</nvdApiKeyEnvironmentVariable>
 
+					<dataDirectory>/data/jenkins-cache/dependency-check</dataDirectory>
+
 					<outputDirectory>
 						${project.build.directory}
 					</outputDirectory>
