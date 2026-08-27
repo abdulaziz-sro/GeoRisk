@@ -79,7 +79,7 @@
 			<groupId>org.geoserver</groupId>
 			<artifactId>geoserver</artifactId>
 			<version>2.28.4</version>
-			<type>jar</type>
+			<type>pom</type>
 		</dependency>
 	</dependencies>
 
