@@ -187,11 +187,13 @@
 	
 	<distributionManagement>
 		<repository>
-			<id>nexus_its</id>
+			<id>nexus.releases.upload</id>
+			<name>Internal Releases</name>
 			<url>https://proget.its-service.de/maven2/maven-group/</url>
 		</repository>
 		<snapshotRepository>
-			<id>nexus_its</id>
+			<id>nexus.snapshots.upload</id>
+			<name>Internal Snapshots</name>
 			<url>https://proget.its-service.de/maven2/maven-group/</url>
 		</snapshotRepository>
 	</distributionManagement>
