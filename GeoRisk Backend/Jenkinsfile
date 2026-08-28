@@ -87,9 +87,7 @@ pipeline{
                             }
                             
                             for(def vulnerability in dependency.vulnerabilities){
-                                previousFindingIds.add("""
-                                    ${dependency.fileName}|${vulnerability.name}
-                                """)
+                                previousFindingIds.add("""${dependency.fileName}|${vulnerability.name}""")
                             }
                         }
                     }
@@ -108,8 +106,8 @@ pipeline{
                             
                             if(vulnerability.cvssv4?.score != null) {
                                 score = vulnerability.cvssv4.score
-                            } else if(vulnerability.cvssv3?.score != null) {
-                                score = vulnerability.cvssv3.score
+                            } else if(vulnerability.cvssv3?.baseScore != null) {
+                                score = vulnerability.cvssv3.baseScore
                             } else if(vulnerability.cvssv2?.score != null) {
                                 score = vulnerability.cvssv2.score
                             }
@@ -118,9 +116,7 @@ pipeline{
                                 continue
                             }
                             
-                            def findingId = """
-                                ${dependency.fileName}|${vulnerability.name}
-                            """
+                            def findingId = """${dependency.fileName}|${vulnerability.name}"""
                             
                             if(previousFindingIds.contains(findingId)){
                                 continue
@@ -155,7 +151,7 @@ pipeline{
                             BigDecimal score = vulnerability.cvss as BigDecimal
                             
                             if(score > secondMaximum){
-                                firstMaximum = score
+                                secondMaximum = score
                             }
                         }
                         
@@ -206,6 +202,18 @@ pipeline{
                 }
             }
         }
+
+        stage('Neue Critical Findings auswerten'){
+            steps{
+                script{
+                    int count = env.NEW_CRITICAL_COUNT.toInteger()
+
+                    if(count > 0){
+                        error("""${count} neue Critical Finding(s) erkannt""")
+                    }
+                }
+            }
+        }
         
         stage('Dependency Check auswerten'){
             steps{
@@ -217,9 +225,29 @@ pipeline{
     }
     post{
         always{
-            publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, icon: '', keepAll: false,
-            reportDir: 'GeoRisk Backend/target', reportFiles: 'dependency-check-report.html', reportName: 'Dependency Check Report', reportTitles: '', useWrapperFileDirectly: true])
+            archiveArtifacts(
+                artifacts: '''
+                    GeoRisk Backend/target/dependency-check-report.json,
+                    GeoRisk Backend/target/dependency-check-report.xml,
+                    GeoRisk Backend/target/dependency-check-report.html
+                ''',
+                allowEmptyArchive: true,
+                fingerprint: true
+            )
+            
+            publishHTML(
+                target: [
+                    allowMissing: false,
+                    alwaysLinkToLastBuild: false,
+                    icon: '',
+                    keepAll: true,
+                    reportDir: 'GeoRisk Backend/target',
+                    reportFiles: 'dependency-check-report.html',
+                    reportName: 'Dependency Check Report',
+                    reportTitles: '',
+                    useWrapperFileDirectly: true])
         }
+        
         failure {
             mail(
                     to: 'abdulaziz.srour@its-digital.de',
