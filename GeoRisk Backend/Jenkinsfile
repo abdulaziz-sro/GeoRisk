@@ -207,6 +207,14 @@ pipeline{
             }
         }
 
+        stage('Dependency Check auswerten'){
+            steps{
+                dependencyCheckPublisher(
+                    pattern: 'GeoRisk Backend/target/dependency-check-report.xml',
+                    stopBuild: true)
+            }
+        }
+
         stage('Neue Critical Findings auswerten'){
             steps{
                 script{
@@ -216,14 +224,6 @@ pipeline{
                         error("""${count} neue Critical Finding(s) erkannt""")
                     }
                 }
-            }
-        }
-        
-        stage('Dependency Check auswerten'){
-            steps{
-                dependencyCheckPublisher(
-                    pattern: 'GeoRisk Backend/target/dependency-check-report.xml',
-                    stopBuild: true)
             }
         }
     }
