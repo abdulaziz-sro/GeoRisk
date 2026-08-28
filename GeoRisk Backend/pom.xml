@@ -81,6 +81,12 @@
 			<version>2.28.4</version>
 			<type>pom</type>
 		</dependency>
+		<dependency>
+			<groupId>org.geoserver.web</groupId>
+			<artifactId>gs-web-app</artifactId>
+			<version>2.28.4</version>
+			<scope>runtime</scope>
+		</dependency>
 	</dependencies>
 
 	<build>
@@ -117,40 +123,42 @@
 			</plugin>
 
 			<!-- Sicherheitslücken prüfen -->
-<!--			<plugin>-->
-<!--				<groupId>org.owasp</groupId>-->
-<!--				<artifactId>dependency-check-maven</artifactId>-->
-<!--				<version>13.0.0</version>-->
+			<!--			<plugin>-->
+			<!--				<groupId>org.owasp</groupId>-->
+			<!--				<artifactId>dependency-check-maven</artifactId>-->
+			<!--				<version>13.0.0</version>-->
 
-<!--				<configuration>-->
-<!--					<formats>-->
-<!--						<format>HTML</format>-->
-<!--						<format>XML</format>-->
-<!--					</formats>-->
+			<!--				<configuration>-->
+			<!--					<formats>-->
+			<!--						<format>HTML</format>-->
+			<!--						<format>XML</format>-->
+			<!--					</formats>-->
 
-<!--					<nvdApiKeyEnvironmentVariable>NVD_API_KEY</nvdApiKeyEnvironmentVariable>-->
+			<!--
+			<nvdApiKeyEnvironmentVariable>NVD_API_KEY</nvdApiKeyEnvironmentVariable>-->
 
-<!--					<dataDirectory>/data/jenkins-cache/dependency-check</dataDirectory>-->
+			<!--
+			<dataDirectory>/data/jenkins-cache/dependency-check</dataDirectory>-->
 
-<!--					<outputDirectory>-->
-<!--						${project.build.directory}-->
-<!--					</outputDirectory>-->
+			<!--					<outputDirectory>-->
+			<!--						${project.build.directory}-->
+			<!--					</outputDirectory>-->
 
-<!--					<skipTestScope>true</skipTestScope>-->
+			<!--					<skipTestScope>true</skipTestScope>-->
 
-<!--					<failBuildOnCVSS>11</failBuildOnCVSS>-->
-<!--				</configuration>-->
+			<!--					<failBuildOnCVSS>11</failBuildOnCVSS>-->
+			<!--				</configuration>-->
 
-<!--				<executions>-->
-<!--					<execution>-->
-<!--						<id>dependency-check</id>-->
-<!--						<phase>verify</phase>-->
-<!--						<goals>-->
-<!--							<goal>check</goal>-->
-<!--						</goals>-->
-<!--					</execution>-->
-<!--				</executions>-->
-<!--			</plugin>-->
+			<!--				<executions>-->
+			<!--					<execution>-->
+			<!--						<id>dependency-check</id>-->
+			<!--						<phase>verify</phase>-->
+			<!--						<goals>-->
+			<!--							<goal>check</goal>-->
+			<!--						</goals>-->
+			<!--					</execution>-->
+			<!--				</executions>-->
+			<!--			</plugin>-->
 
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
@@ -190,7 +198,7 @@
 			</plugin>
 		</plugins>
 	</build>
-	
+
 	<distributionManagement>
 		<repository>
 			<id>nexus.releases.upload</id>
