@@ -1,0 +1,239 @@
+pipeline{
+    agent {label 'bsa-slave'}
+    tools {
+        maven 'maven'
+    }
+    
+    stages {
+        stage('Build') {
+            steps{
+                git(
+                    url: 'https://github.com/abdulaziz-sro/GeoRisk.git',
+                    branch: 'feature/sbom'
+                )
+                    dir('GeoRisk Backend') {
+                        configFileProvider([
+                                configFile(
+                                        fileId: 'bsa-ci-slave01-maven-settings',
+                                        variable: 'ENV_MAVEN_SETTINGS'
+                                    )
+                            ]) {
+                                sh '''
+                                    mvn \
+                                    --settings "$ENV_MAVEN_SETTINGS" \
+                                    -DskipTests \
+                                    clean package \
+                                    '''
+                            }
+                    }
+                }
+        }
+        
+        stage('Vorherigen Bericht laden') {
+            steps {
+                script {
+                    int previousBuildNumber = env.BUILD_NUMBER.toInteger() - 1
+                    if (previousBuildNumber > 0) {
+                        try {
+                            copyArtifacts(
+                                projectName: env.JOB_NAME,
+                                selector: specific(
+                                    previousBuildNumber.toString()
+                                ),
+                                filter: 'GeoRisk Backend/target/dependency-check-report.json',
+                                target: 'previous-report',
+                                flatten: true
+                            )
+                        } catch(Exception e) {
+                            echo("""Kein Bericht aus Build ${previousBuildNumber} verfügbar""")
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage ('Dependency Check'){
+            steps {
+                dir('GeoRisk Backend') {
+                        dependencyCheck(
+                                odcInstallation: 'dependency_check',
+                                nvdCredentialsId: 'WKS_NVD_API_KEY',
+                                additionalArguments: """
+                                    --project "${env.JOB_NAME}"
+                                    --scan target
+                                    --format HTML
+                                    --format XML
+                                    --format JSON
+                                    --disableCentral
+                                    --out target
+                                    --data /data/jenkins-cache/dependency-check
+                                """
+                            )
+                }
+            }
+        }
+        
+        stage('Neue Critical Findings vorbereiten') {
+            steps {
+                script {
+                    def previousFindingIds = [] as Set
+                    
+                    if(fileExists('previous-report/dependency-check-report.json')){
+                        def previousReport = readJSON(file: 'previous-report/dependency-check-report.json')
+                        
+                        for(def dependency in previousReport.dependencies){
+                            if(dependency.vulnerabilities == null){
+                                continue
+                            }
+                            
+                            for(def vulnerability in dependency.vulnerabilities){
+                                previousFindingIds.add("""
+                                    ${dependency.fileName}|${vulnerability.name}
+                                """)
+                            }
+                        }
+                    }
+                    
+                    
+                    def currentReport = readJSON(file: 'GeoRisk Backend/target/dependency-check-report.json')
+                    def newFindingsByDependency = [:]
+                    
+                    for(def dependency in currentReport.dependencies){
+                        if(dependency.vulnerabilities == null) {
+                            continue
+                        }
+                        
+                        for(def vulnerability in dependency.vulnerabilities) {
+                            def score = 0
+                            
+                            if(vulnerability.cvssv4?.score != null) {
+                                score = vulnerability.cvssv4.score
+                            } else if(vulnerability.cvssv3?.score != null) {
+                                score = vulnerability.cvssv3.score
+                            } else if(vulnerability.cvssv2?.score != null) {
+                                score = vulnerability.cvssv2.score
+                            }
+                            
+                            if((score as BigDecimal) < 9.0) {
+                                continue
+                            }
+                            
+                            def findingId = """
+                                ${dependency.fileName}|${vulnerability.name}
+                            """
+                            
+                            if(previousFindingIds.contains(findingId)){
+                                continue
+                            }
+                            
+                            if(!newFindingsByDependency.containsKey(dependency.fileName)){
+                                newFindingsByDependency[dependency.fileName] = []
+                            }
+                            
+                            newFindingsByDependency[dependency.fileName].add([
+                                    cve: vulnerability.name,
+                                    severity: vulnerability.severity,
+                                    cvss: score
+                                ])
+                        }
+                    }
+                    
+                    def sortedDependencies = newFindingsByDependency.entrySet().toList()
+                    
+                    sortedDependencies.sort { first, second ->
+                        BigDecimal firstMaximum = 0
+                        BigDecimal secondMaximum = 0
+                        for (def vulnerability in first.value){
+                            BigDecimal score = vulnerability.cvss as BigDecimal
+                            
+                            if(score > firstMaximum){
+                                firstMaximum = score
+                            }
+                        }
+                        
+                        for (def vulnerability in second.value){
+                            BigDecimal score = vulnerability.cvss as BigDecimal
+                            
+                            if(score > secondMaximum){
+                                firstMaximum = score
+                            }
+                        }
+                        
+                        secondMaximum <=> firstMaximum
+                    }
+                    
+                    def resultLines = []
+                    int dependencyNumber = 1
+                    int totalNewFindings = 0
+                    
+                    for(def entry in sortedDependencies) {
+                        def dependencyName = entry.key
+                        def vulnerabilites = entry.value
+                        
+                        vulnerabilites.sort{ first, second ->
+                            def scoreComparision = 
+                                (second.cvss as BigDecimal) <=> (first.cvss as BigDecimal)
+                            
+                            if(scoreComparision != 0){
+                                return scoreComparision
+                            }
+                            
+                            return first.cve <=> second.cve
+                        }
+                        
+                        resultLines.add("""
+                            ${dependencyNumber}. Dependency: ${dependencyName}
+                        """)
+                        resultLines.add('')
+                        
+                        for(def vulnerability in vulnerabilities) {
+                            resultLines.add("    - CVE: " + vulnerability.cve)
+                            resultLines.add("    - Severity: " + vulnerability.severity)
+                            resultLines.add("    - CVSS: " + vulnerability.cvss)
+                            resultLines.add('')
+                            
+                            totalNewFindings++
+                        }
+                        dependencyNumber++
+                    }
+                    
+                    if(totalNewFindings == 0){
+                        resultLines.add('Keine neuen Critical Findings ab CVSS 9.0 gefunden.')
+                    }
+                    
+                    env.NEW_CRITICAL_TEXT = resultLines.join('\n').trim() + '\n'
+                    env.NEW_CRITICAL_COUNT = totalNewFindings.toString()
+                }
+            }
+        }
+        
+        stage('Dependency Check auswerten'){
+            steps{
+                dependencyCheckPublisher(
+                    pattern: 'GeoRisk Backend/target/dependency-check-report.xml',
+                    stopBuild: true)
+            }
+        }
+    }
+    post{
+        always{
+            publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, icon: '', keepAll: false,
+            reportDir: 'GeoRisk Backend/target', reportFiles: 'dependency-check-report.html', reportName: 'Dependency Check Report', reportTitles: '', useWrapperFileDirectly: true])
+        }
+        failure {
+            mail(
+                    to: 'abdulaziz.srour@its-digital.de',
+                    subject: """[Security] ${env.NEW_CRITICAL_COUNT} neue kritische Sicherheitslücke/n: ${env.JOB_NAME}""",
+                    body: """
+                        ${env.NEW_CRITICAL_COUNT} neue kritische Sicherheitslücke/n erkannt.
+                        
+                        Job: ${env.JOB_NAME}
+                        Build: ${env.BUILD_NUMBER}
+                        URL: ${env.BUILD_URL}
+                        
+                        ${env.NEW_CRITICAL_TEXT}
+                    """
+                )
+        }
+    }
+}
