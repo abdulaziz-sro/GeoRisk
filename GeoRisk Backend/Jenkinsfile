@@ -168,9 +168,9 @@ pipeline{
                     
                     for(def entry in sortedDependencies) {
                         def dependencyName = entry.key
-                        def vulnerabilites = entry.value
+                        def vulnerabilities = entry.value
                         
-                        vulnerabilites.sort{ first, second ->
+                        vulnerabilities.sort{ first, second ->
                             def scoreComparision = 
                                 (second.cvss as BigDecimal) <=> (first.cvss as BigDecimal)
                             
