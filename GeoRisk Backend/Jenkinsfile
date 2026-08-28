@@ -261,7 +261,7 @@ pipeline{
                 mail(
                         to: 'abdulaziz.srour@its-digital.de',
                         subject: """[Security] ${env.NEW_CRITICAL_COUNT} neue kritische Sicherheitslücke(n): ${env.JOB_NAME}""",
-                        body: ["${env.NEW_CRITICAL_COUNT} neue kritische Sicherheitslücke(n) erkannt.,"
+                        body: ["${env.NEW_CRITICAL_COUNT} neue kritische Sicherheitslücke(n) erkannt.",
                             "",
                             "Job: ${env.JOB_NAME}",
                             "Build: ${env.BUILD_NUMBER}",
