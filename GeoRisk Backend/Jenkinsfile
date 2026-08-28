@@ -196,12 +196,8 @@ pipeline{
                     if(totalNewFindings == 0){
                         resultLines.add('Keine neuen Critical Findings ab CVSS 9.0 gefunden.')
                     }
-
-                    writeFile(
-                        file: 'GeoRisk Backend/target/new-critical-findings.txt',
-                        text: resultLines.join('\n').trim() + '\n'
-                    )
                     
+                    env.NEW_CRITICAL_TEXT = resultLines.join('\n').trim() + '\n'
                     env.NEW_CRITICAL_COUNT = totalNewFindings.toString()
                 }
             }
@@ -253,27 +249,21 @@ pipeline{
         }
 
         failure {
-            script {
-                def findingsText = 'Keine Auswertung der neuen Findings verfügbar'
-                if(fileExists('GeoRisk Backend/target/new-critical-findings.txt')){
-                    findingsText = readFile('GeoRisk Backend/target/new-critical-findings.txt').trim()
-                }
-                mail(
-                        to: 'abdulaziz.srour@its-digital.de',
-                        subject: """[Security] ${env.NEW_CRITICAL_COUNT} neue kritische Sicherheitslücke(n): ${env.JOB_NAME}""",
-                        body: ["${env.NEW_CRITICAL_COUNT} neue kritische Sicherheitslücke(n) erkannt.",
-                            "",
-                            "Job: ${env.JOB_NAME}",
-                            "Build: ${env.BUILD_NUMBER}",
-                            "URL: ${env.BUILD_URL}",
-                            "",
-                            "Neue kritische Findings:",
-                            "",
-                            findingsText,
-                            ""
-                        ].join("\n")
-                )
-            }
+            mail(
+                    to: 'abdulaziz.srour@its-digital.de',
+                    subject: """[Security] ${env.NEW_CRITICAL_COUNT} neue kritische Sicherheitslücke(n): ${env.JOB_NAME}""",
+                    body: ["${env.NEW_CRITICAL_COUNT} neue kritische Sicherheitslücke(n) erkannt.",
+                        "",
+                        "Job: ${env.JOB_NAME}",
+                        "Build: ${env.BUILD_NUMBER}",
+                        "URL: ${env.BUILD_URL}",
+                        "",
+                        "Neue kritische Findings:",
+                        "",
+                        env.NEW_CRITICAL_TEXT,
+                        ""
+                    ].join("\n")
+            )
         }
     }
 }
