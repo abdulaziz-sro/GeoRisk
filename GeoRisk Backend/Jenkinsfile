@@ -1,269 +1,293 @@
 pipeline{
     agent {label 'bsa-slave'}
-    tools {
-        maven 'maven'
-    }
+    tools {maven 'maven'}
     
+        
+    parameters {
+        choice(
+            name: 'TEST_ENVIRONMENT',
+            choices: [
+                'lokal',
+                'SV-TEST',
+                'SV-QS'
+            ],
+            description: 'Umgebung, gegen die die Tests ausgeführt werden'
+        )
+
+        string(
+            name: 'GEOSERVER_URL',
+            defaultValue: 'http://localhost:8080/geoserver',
+            description: 'Basis-URL des GeoServers'
+        )
+
+        string(
+            name: 'LWAS_URL',
+            defaultValue: 'https://localhost:8443',
+            description: 'Basis-URL der LWAS-Instanz'
+        )
+
+        string(
+            name: 'GEOSERVER_VERSION',
+            defaultValue: '',
+            description: 'Optional. Leer lassen für automatische Ermittlung'
+        )
+
+        string(
+            name: 'LWAS_VERSION',
+            defaultValue: '',
+            description: 'LWAS-Version'
+        )
+    }
+
+    environment {
+        ALLURE_RESULTS_DIR = 'target/allure-results'
+
+        /*
+         * Den Credentials-Namen später an die tatsächliche
+         * Jenkins-Credentials-ID anpassen.
+         */
+        GEOSERVER_CREDENTIALS_ID = 'geoserver-admin'
+    }
+
     stages {
-        stage('Build') {
+        stage('Checkout') {
             steps{
                 git(
                     url: 'https://github.com/abdulaziz-sro/GeoRisk.git',
-                    branch: 'feature/sbom'
+                    branch: 'feature/allure-report'
                 )
-                    dir('GeoRisk Backend') {
-                        configFileProvider([
-                                configFile(
-                                        fileId: 'bsa-ci-slave01-maven-settings',
-                                        variable: 'ENV_MAVEN_SETTINGS'
-                                    )
-                            ]) {
-                                sh '''
-                                    mvn \
-                                    --settings "$ENV_MAVEN_SETTINGS" \
-                                    -DskipTests \
-                                    clean package \
-                                    '''
-                            }
-                    }
-                }
+            }
         }
-        
-        stage('Vorherigen Bericht laden') {
+
+        stage('Umgebung vorbereiten') {
             steps {
                 script {
-                    int previousBuildNumber = env.BUILD_NUMBER.toInteger() - 1
-                    if (previousBuildNumber > 0) {
-                        try {
-                            copyArtifacts(
-                                projectName: env.JOB_NAME,
-                                selector: specific(
-                                    previousBuildNumber.toString()
-                                ),
-                                filter: 'GeoRisk Backend/target/dependency-check-report.json',
-                                target: 'previous-report',
-                                flatten: true
-                            )
-                        } catch(Exception e) {
-                            echo("""Kein Bericht aus Build ${previousBuildNumber} verfügbar""")
+                    env.RESOLVED_GEOSERVER_VERSION =
+                        params.GEOSERVER_VERSION?.trim()
+
+                    env.RESOLVED_LWAS_VERSION =
+                        params.LWAS_VERSION?.trim()
+
+                    if (!env.RESOLVED_GEOSERVER_VERSION) {
+                        if (params.TEST_ENVIRONMENT == 'lokal') {
+                            env.RESOLVED_GEOSERVER_VERSION = 'lokal'
+                        } else {
+                            env.RESOLVED_GEOSERVER_VERSION =
+                                determineGeoServerVersion(
+                                    params.GEOSERVER_URL
+                                )
                         }
                     }
+
+                    if (!env.RESOLVED_LWAS_VERSION) {
+                        env.RESOLVED_LWAS_VERSION =
+                            params.TEST_ENVIRONMENT == 'lokal'
+                                ? 'lokal'
+                                : 'unbekannt'
+                    }
+
+                    echo """
+                    Verwendete Testumgebung:
+                    Umgebung:         ${params.TEST_ENVIRONMENT}
+                    GeoServer URL:     ${params.GEOSERVER_URL}
+                    GeoServer Version: ${env.RESOLVED_GEOSERVER_VERSION}
+                    LWAS URL:          ${params.LWAS_URL}
+                    LWAS Version:      ${env.RESOLVED_LWAS_VERSION}
+                    """.stripIndent()
                 }
             }
         }
-        
-        stage ('Dependency Check'){
-            steps {
-                dir('GeoRisk Backend') {
-                        dependencyCheck(
-                                odcInstallation: 'dependency_check',
-                                nvdCredentialsId: 'WKS_NVD_API_KEY',
-                                additionalArguments: """
-                                    --project "${env.JOB_NAME}"
-                                    --scan target
-                                    --format HTML
-                                    --format XML
-                                    --format JSON
-                                    --disableCentral
-                                    --out target
-                                    --data /data/jenkins-cache/dependency-check
-                                """
-                            )
-                }
-            }
-        }
-        
-        stage('Neue Critical Findings vorbereiten') {
+
+        stage('Tests ausführen') {
             steps {
                 script {
-                    def previousFindingIds = [] as Set
-                    
-                    if(fileExists('previous-report/dependency-check-report.json')){
-                        def previousReport = readJSON(file: 'previous-report/dependency-check-report.json')
-                        
-                        for(def dependency in previousReport.dependencies){
-                            if(dependency.vulnerabilities == null){
-                                continue
-                            }
-                            
-                            for(def vulnerability in dependency.vulnerabilities){
-                                previousFindingIds.add("""${dependency.fileName}|${vulnerability.name}""")
-                            }
-                        }
+                    if (isUnix()) {
+                        sh """
+                            mvn clean test \
+                                -Dtest.environment='${params.TEST_ENVIRONMENT}' \
+                                -Dgeoserver.url='${params.GEOSERVER_URL}' \
+                                -Dlwas.url='${params.LWAS_URL}' \
+                                -Dgeoserver.version='${env.RESOLVED_GEOSERVER_VERSION}' \
+                                -Dlwas.version='${env.RESOLVED_LWAS_VERSION}'
+                        """
+                    } else {
+                        bat """
+                            mvn clean test ^
+                                -Dtest.environment="${params.TEST_ENVIRONMENT}" ^
+                                -Dgeoserver.url="${params.GEOSERVER_URL}" ^
+                                -Dlwas.url="${params.LWAS_URL}" ^
+                                -Dgeoserver.version="${env.RESOLVED_GEOSERVER_VERSION}" ^
+                                -Dlwas.version="${env.RESOLVED_LWAS_VERSION}"
+                        """
                     }
-                    
-                    
-                    def currentReport = readJSON(file: 'GeoRisk Backend/target/dependency-check-report.json')
-                    def newFindingsByDependency = [:]
-                    
-                    for(def dependency in currentReport.dependencies){
-                        if(dependency.vulnerabilities == null) {
-                            continue
-                        }
-                        
-                        for(def vulnerability in dependency.vulnerabilities) {
-                            def score = 0
-                            
-                            if(vulnerability.cvssv4?.baseScore != null) {
-                                score = vulnerability.cvssv4.baseScore
-                            } else if(vulnerability.cvssv3?.baseScore != null) {
-                                score = vulnerability.cvssv3.baseScore
-                            } else if(vulnerability.cvssv2?.score != null) {
-                                score = vulnerability.cvssv2.score
-                            }
-                            
-                            if((score as BigDecimal) < 9.0) {
-                                continue
-                            }
-                            
-                            def findingId = """${dependency.fileName}|${vulnerability.name}"""
-                            
-                            if(previousFindingIds.contains(findingId)){
-                                continue
-                            }
-                            
-                            if(!newFindingsByDependency.containsKey(dependency.fileName)){
-                                newFindingsByDependency[dependency.fileName] = []
-                            }
-                            
-                            newFindingsByDependency[dependency.fileName].add([
-                                    cve: vulnerability.name,
-                                    severity: vulnerability.severity,
-                                    cvss: score
-                                ])
-                        }
-                    }
-                    
-                    def sortedDependencies = newFindingsByDependency.entrySet().toList()
-                    
-                    sortedDependencies.sort { first, second ->
-                        BigDecimal firstMaximum = 0
-                        BigDecimal secondMaximum = 0
-                        for (def vulnerability in first.value){
-                            BigDecimal score = vulnerability.cvss as BigDecimal
-                            
-                            if(score > firstMaximum){
-                                firstMaximum = score
-                            }
-                        }
-                        
-                        for (def vulnerability in second.value){
-                            BigDecimal score = vulnerability.cvss as BigDecimal
-                            
-                            if(score > secondMaximum){
-                                secondMaximum = score
-                            }
-                        }
-                        
-                        secondMaximum <=> firstMaximum
-                    }
-                    
-                    def resultLines = []
-                    int dependencyNumber = 1
-                    int totalNewFindings = 0
-                    
-                    for(def entry in sortedDependencies) {
-                        def dependencyName = entry.key
-                        def vulnerabilities = entry.value
-                        
-                        vulnerabilities.sort{ first, second ->
-                            def scoreComparision = 
-                                (second.cvss as BigDecimal) <=> (first.cvss as BigDecimal)
-                            
-                            if(scoreComparision != 0){
-                                return scoreComparision
-                            }
-                            
-                            return first.cve <=> second.cve
-                        }
-                        
-                        resultLines.add("${dependencyNumber}. Dependency: ${dependencyName}")
-                        resultLines.add("   Neue kritische CVEs: ${vulnerabilities.size()}")
-
-                        resultLines.add('')
-                        
-                        for(def vulnerability in vulnerabilities) {
-                            resultLines.add("    - CVE: " + vulnerability.cve)
-                            resultLines.add("      Severity: " + vulnerability.severity)
-                            resultLines.add("      CVSS: " + vulnerability.cvss)
-                            resultLines.add('')
-                            
-                            totalNewFindings++
-                        }
-                        dependencyNumber++
-                    }
-                    
-                    if(totalNewFindings == 0){
-                        resultLines.add('Keine neuen Critical Findings ab CVSS 9.0 gefunden.')
-                    }
-                    
-                    env.NEW_CRITICAL_TEXT = resultLines.join('\n').trim() + '\n'
-                    env.NEW_CRITICAL_COUNT = totalNewFindings.toString()
                 }
             }
         }
 
-        stage('Dependency Check auswerten'){
-            steps{
-                dependencyCheckPublisher(
-                    pattern: 'GeoRisk Backend/target/dependency-check-report.xml',
-                    stopBuild: true)
+        stage('Allure-Metadaten erzeugen') {
+            steps {
+                script {
+                    def gitCommit = env.GIT_COMMIT ?: 'unbekannt'
+
+                    def reportName =
+                        "OGC Tests | "
+                        + "GS ${env.RESOLVED_GEOSERVER_VERSION} | "
+                        + "LWAS ${env.RESOLVED_LWAS_VERSION} | "
+                        + "${params.TEST_ENVIRONMENT}"
+
+                    def environmentProperties = """
+                        Testumgebung=${params.TEST_ENVIRONMENT}
+                        GeoServer.URL=${params.GEOSERVER_URL}
+                        GeoServer.Version=${env.RESOLVED_GEOSERVER_VERSION}
+                        LWAS.URL=${params.LWAS_URL}
+                        LWAS.Version=${env.RESOLVED_LWAS_VERSION}
+                        Jenkins.Job=${env.JOB_NAME}
+                        Jenkins.Build=${env.BUILD_NUMBER}
+                        Git.Commit=${gitCommit}
+                    """.stripIndent().trim() + '\n'
+
+                    def executorJson = groovy.json.JsonOutput.prettyPrint(
+                        groovy.json.JsonOutput.toJson([
+                            name       : 'Jenkins',
+                            type       : 'jenkins',
+                            buildOrder : env.BUILD_NUMBER as Integer,
+                            buildName  : "${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                            buildUrl   : env.BUILD_URL ?: '',
+                            reportUrl  : "${env.BUILD_URL ?: ''}allure",
+                            reportName : reportName
+                        ])
+                    )
+
+                    writeFile(
+                        file: "${env.ALLURE_RESULTS_DIR}/environment.properties",
+                        text: environmentProperties,
+                        encoding: 'UTF-8'
+                    )
+
+                    writeFile(
+                        file: "${env.ALLURE_RESULTS_DIR}/executor.json",
+                        text: executorJson,
+                        encoding: 'UTF-8'
+                    )
+
+                    echo "Allure-Metadaten wurden erstellt."
+                    echo "Reportname: ${reportName}"
+                }
             }
         }
 
-        stage('Neue Critical Findings auswerten'){
-            steps{
-                script{
-                    int count = env.NEW_CRITICAL_COUNT.toInteger()
-
-                    if(count > 0){
-                        error("""${count} neue Critical Finding(s) erkannt""")
+        stage('Allure-Ergebnisse prüfen') {
+            steps {
+                script {
+                    if (isUnix()) {
+                        sh """
+                            echo "Inhalt von ${ALLURE_RESULTS_DIR}:"
+                            find "${ALLURE_RESULTS_DIR}" \
+                                -maxdepth 1 \
+                                -type f \
+                                -print
+                        """
+                    } else {
+                        bat """
+                            echo Inhalt von %ALLURE_RESULTS_DIR%:
+                            dir /b "%ALLURE_RESULTS_DIR%"
+                        """
                     }
                 }
             }
         }
     }
-    post{
-        always{
-            archiveArtifacts(
-                artifacts: '''
-                    GeoRisk Backend/target/dependency-check-report.json,
-                    GeoRisk Backend/target/dependency-check-report.xml,
-                    GeoRisk Backend/target/dependency-check-report.html
-                ''',
-                allowEmptyArchive: true,
-                fingerprint: true
+
+    post {
+        always {
+            script {
+                def reportName =
+                    "OGC Tests | "
+                    + "GS ${env.RESOLVED_GEOSERVER_VERSION ?: 'unbekannt'} | "
+                    + "LWAS ${env.RESOLVED_LWAS_VERSION ?: 'unbekannt'} | "
+                    + "${params.TEST_ENVIRONMENT}"
+
+                allure(
+                    reportBuildPolicy: 'ALWAYS',
+                    results: [
+                        [
+                            path: env.ALLURE_RESULTS_DIR
+                        ]
+                    ],
+                    reportName: reportName
+                )
+            }
+        }
+    }
+}
+
+
+/*
+ * Die Methode wird nur verwendet, wenn:
+ *
+ * 1. keine GeoServer-Version als Parameter angegeben wurde
+ * 2. die Ausführung nicht lokal erfolgt
+ */
+String determineGeoServerVersion(String geoServerUrl) {
+    try {
+        String versionXml
+
+        withCredentials([
+            usernamePassword(
+                credentialsId: env.GEOSERVER_CREDENTIALS_ID,
+                usernameVariable: 'GS_USERNAME',
+                passwordVariable: 'GS_PASSWORD'
             )
-            
-            publishHTML(
-                target: [
-                    allowMissing: false,
-                    alwaysLinkToLastBuild: false,
-                    icon: '',
-                    keepAll: true,
-                    reportDir: 'GeoRisk Backend/target',
-                    reportFiles: 'dependency-check-report.html',
-                    reportName: 'Dependency Check Report',
-                    reportTitles: '',
-                    useWrapperFileDirectly: true])
+        ]) {
+            if (isUnix()) {
+                versionXml = sh(
+                    script: """
+                        curl --fail --silent \
+                            --user "\$GS_USERNAME:\$GS_PASSWORD" \
+                            --header "Accept: text/xml" \
+                            "${geoServerUrl}/rest/about/version.xml"
+                    """,
+                    returnStdout: true
+                ).trim()
+            } else {
+                versionXml = powershell(
+                    script: """
+                        \$pair = "\${env:GS_USERNAME}:\${env:GS_PASSWORD}"
+
+                        \$encodedCredentials = :ToBase64String(
+                            [Text.Encoding]::ASCII.GetBytes(\$pair)
+                        )
+
+                        \$headers = @{
+                            Authorization = "Basic \$encodedCredentials"
+                            Accept = "text/xml"
+                        }
+
+                        Invoke-RestMethod `
+                            -Uri "${geoServerUrl}/rest/about/version.xml" `
+                            -Headers \$headers
+                    """,
+                    returnStdout: true
+                ).trim()
+            }
         }
 
-        failure {
-            mail(
-                    to: 'abdulaziz.srour@its-digital.de',
-                    subject: """[Security] ${env.NEW_CRITICAL_COUNT} neue kritische Sicherheitslücke(n): ${env.JOB_NAME}""",
-                    body: ["${env.NEW_CRITICAL_COUNT} neue kritische Sicherheitslücke(n) erkannt.",
-                        "",
-                        "Job: ${env.JOB_NAME}",
-                        "Build: ${env.BUILD_NUMBER}",
-                        "URL: ${env.BUILD_URL}",
-                        "",
-                        "Neue kritische Findings:",
-                        "",
-                        env.NEW_CRITICAL_TEXT,
-                        ""
-                    ].join("\n")
-            )
+        def matcher = versionXml =~
+            /(?s)<resource[^>]*name="GeoServer"[^>]*>.*?<Version>\s*([^<]+)\s*<\/Version>/
+
+        if (matcher.find()) {
+            return matcher.group(1).trim()
         }
+
+        echo 'GeoServer-Version wurde in der REST-Antwort nicht gefunden.'
+        return 'unbekannt'
+    } catch (Exception exception) {
+        echo """
+        GeoServer-Version konnte nicht automatisch ermittelt werden.
+        Ursache: ${exception.message}
+        Es wird der Wert 'unbekannt' verwendet.
+        """.stripIndent()
+
+        return 'unbekannt'
     }
 }
