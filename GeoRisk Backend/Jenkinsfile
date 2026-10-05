@@ -37,35 +37,6 @@ Git.Commit=${gitCommit}
             groovy.json.JsonOutput.toJson(executorData)
         )
 
-    def allureConfigData = [
-        name: reportName,
-
-        plugins: [
-            awesome: [
-                options: [
-                    reportName     : reportName,
-                    reportLanguage : 'de'
-                ]
-            ]
-        ],
-
-        variables: [
-            Testumgebung        : params.TEST_ENVIRONMENT,
-            'GeoServer.URL'     : env.GEOSERVER_URL,
-            'GeoServer.Version' : geoServerVersion,
-            'LWAS.URL'          : env.LWAS_URL,
-            'LWAS.Version'      : lwasVersion,
-            'Jenkins.Job'       : env.JOB_NAME,
-            'Jenkins.Build'     : env.BUILD_NUMBER,
-            'Git.Commit'        : gitCommit
-        ]
-    ]
-
-    def allureConfigJson =
-        groovy.json.JsonOutput.prettyPrint(
-            groovy.json.JsonOutput.toJson(allureConfigData)
-        )
-
     writeFile(
         file: "${resultsDirectory}/environment.properties",
         text: environmentProperties,
@@ -78,14 +49,6 @@ Git.Commit=${gitCommit}
         encoding: 'UTF-8'
     )
 
-    writeFile(
-        file: 'allurerc.json',
-        text: allureConfigJson,
-        encoding: 'UTF-8'
-    )
-
-    echo 'Allure-Metadaten wurden erstellt.'
-    echo "Reportname: ${reportName}"
 }
 
 def determineGeoServerVersion(String geoServerUrl) {
