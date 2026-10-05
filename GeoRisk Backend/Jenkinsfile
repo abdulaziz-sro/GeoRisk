@@ -1,3 +1,104 @@
+def writeAllureMetadata() {
+    def resultsDirectory = 'target/allure-results'
+    def gitCommit = env.GIT_COMMIT ?: 'unbekannt'
+
+    def geoServerVersion = env.RESOLVED_GEOSERVER_VERSION ?: 'unbekannt'
+    def lwasVersion = env.RESOLVED_LWAS_VERSION ?: 'unbekannt'
+
+    def reportName = "OGC Tests | GS ${geoServerVersion} | LWAS ${lwasVersion} | ${params.TEST_ENVIRONMENT}"
+
+    sh """
+        mkdir -p '${resultsDirectory}'
+    """
+
+    def environmentProperties = """
+        Testumgebung=${params.TEST_ENVIRONMENT}
+        GeoServer.URL=${env.GEOSERVER_URL}
+        GeoServer.Version=${geoServerVersion}
+        LWAS.URL=${env.LWAS_URL}
+        LWAS.Version=${lwasVersion}
+        Jenkins.Job=${env.JOB_NAME}
+        Jenkins.Build=${env.BUILD_NUMBER}
+        Git.Commit=${gitCommit}
+    """.stripIndent().trim() + '\n'
+
+    def executorJson =
+        groovy.json.JsonOutput.prettyPrint(
+            groovy.json.JsonOutput.toJson([
+                name       : 'Jenkins',
+                type       : 'jenkins',
+                buildOrder : env.BUILD_NUMBER as Integer,
+                buildName  : "${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                buildUrl   : env.BUILD_URL ?: '',
+                reportUrl  : "${env.BUILD_URL ?: ''}allure/",
+                reportName : reportName
+            ])
+        )
+
+    writeFile(
+        file: "${resultsDirectory}/environment.properties",
+        text: environmentProperties,
+        encoding: 'UTF-8'
+    )
+
+    writeFile(
+        file: "${resultsDirectory}/executor.json",
+        text: executorJson,
+        encoding: 'UTF-8'
+    )
+
+    echo 'Allure-Metadaten wurden erstellt.'
+    echo "Reportname: ${reportName}"
+}
+
+
+def determineGeoServerVersion(String geoServerUrl) {
+    try {
+        String versionXml
+
+        withCredentials([
+            usernamePassword(
+                credentialsId: env.GEOSERVER_CREDENTIALS_ID,
+                usernameVariable: 'GS_USERNAME',
+                passwordVariable: 'GS_PASSWORD'
+            )
+        ]) {
+            versionXml = sh(
+                script: '''
+                    curl \
+                        --fail \
+                        --silent \
+                        --user "$GS_USERNAME:$GS_PASSWORD" \
+                        --header "Accept: text/xml" \
+                        "$GEOSERVER_URL/rest/about/version.xml"
+                ''',
+                returnStdout: true
+            ).trim()
+        }
+
+        def matcher = versionXml =~ /(?s)<resource[^>]*name="GeoServer"[^>]*>.*?<Version>\s*([^<]+)\s*<\/Version>/
+
+        if (matcher.find()) {
+            return matcher.group(1).trim()
+        }
+
+        echo """
+        GeoServer-Version wurde in der REST-Antwort
+        nicht gefunden.
+        """.stripIndent()
+
+        return 'unbekannt'
+    } catch (Exception exception) {
+        echo """
+        GeoServer-Version konnte nicht automatisch ermittelt werden.
+        Ursache: ${exception.message}
+        Es wird der Wert 'unbekannt' verwendet.
+        """.stripIndent()
+
+        return 'unbekannt'
+    }
+}
+
 pipeline {
     agent { label 'bsa-slave' }
     tools { maven 'maven' }
