@@ -17,8 +17,6 @@ def writeAllureMetadata() {
         GeoServer.Version=${geoServerVersion}
         LWAS.URL=${env.LWAS_URL}
         LWAS.Version=${lwasVersion}
-        Jenkins.Job=${env.JOB_NAME}
-        Jenkins.Build=${env.BUILD_NUMBER}
         Git.Commit=${gitCommit}
     """.stripIndent().trim() + '\n'
 
@@ -46,9 +44,6 @@ def writeAllureMetadata() {
         text: executorJson,
         encoding: 'UTF-8'
     )
-
-    echo 'Allure-Metadaten wurden erstellt.'
-    echo "Reportname: ${reportName}"
 }
 
 
@@ -161,8 +156,10 @@ pipeline {
 
                     env.GEOSERVER_URL = selectedEnvironment.geoServerUrl
                     env.LWAS_URL = selectedEnvironment.lwasUrl
+
                     env.RESOLVED_GEOSERVER_VERSION = params.GEOSERVER_VERSION?.trim()
                     env.RESOLVED_LWAS_VERSION = params.LWAS_VERSION?.trim()
+                    env.TEST_ENVIRONMENT = params.TEST_ENVIRONMENT
 
                     if (!env.RESOLVED_GEOSERVER_VERSION) {
                         if (params.TEST_ENVIRONMENT == 'lokal') {
