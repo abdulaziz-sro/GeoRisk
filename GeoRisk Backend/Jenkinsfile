@@ -208,9 +208,16 @@ pipeline {
                             reportName: reportName
                         )
                         */
+                        
+                        sh '''
+                            rm -rf target/allure-report
+                            allure generate target/allure-results \
+                                --clean \
+                                --output target/allure-report
+                        '''
+                        
                         archiveArtifacts(
-                            artifacts: reportArchive,
-                            allowEmptyArchive: false,
+                            artifacts: 'target/allure-report/**/*',
                             fingerprint: true
                         )
                     } else {
