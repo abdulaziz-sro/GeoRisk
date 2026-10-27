@@ -197,7 +197,6 @@ pipeline {
                         def reportName =
                             "OGC Tests | GS ${geoServerVersion} | LWAS ${lwasVersion} | ${params.TEST_ENVIRONMENT}"
 
-                        /*
                         allure(
                             reportBuildPolicy: 'ALWAYS',
                             results: [
@@ -206,19 +205,6 @@ pipeline {
                                 ]
                             ],
                             reportName: reportName
-                        )
-                        */
-                        
-                        sh '''
-                            rm -rf target/allure-report
-                            allure generate target/allure-results \
-                                --clean \
-                                --output target/allure-report
-                        '''
-                        
-                        archiveArtifacts(
-                            artifacts: 'target/allure-report/**/*',
-                            fingerprint: true
                         )
                     } else {
                         echo """
