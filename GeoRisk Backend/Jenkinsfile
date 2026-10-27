@@ -197,6 +197,7 @@ pipeline {
                         def reportName =
                             "OGC Tests | GS ${geoServerVersion} | LWAS ${lwasVersion} | ${params.TEST_ENVIRONMENT}"
 
+                        /*
                         allure(
                             reportBuildPolicy: 'ALWAYS',
                             results: [
@@ -206,6 +207,7 @@ pipeline {
                             ],
                             reportName: reportName
                         )
+                        */
                     } else {
                         echo """
                         Kein Allure-Ergebnisverzeichnis vorhanden.
