@@ -208,6 +208,10 @@ pipeline {
                             reportName: reportName
                         )
                         */
+                        archiveArtifacts(
+                            artifacts: 'target/allure-results/**/*',
+                            allowEmptyArchive: true
+                        )
                     } else {
                         echo """
                         Kein Allure-Ergebnisverzeichnis vorhanden.
