@@ -209,8 +209,9 @@ pipeline {
                         )
                         */
                         archiveArtifacts(
-                            artifacts: 'target/allure-results/**/*',
-                            allowEmptyArchive: true
+                            artifacts: reportArchive,
+                            allowEmptyArchive: false,
+                            fingerprint: true
                         )
                     } else {
                         echo """
